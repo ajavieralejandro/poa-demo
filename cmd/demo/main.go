@@ -1,9 +1,9 @@
-// Command demo es el ejecutable del esqueleto académico.
-// No construye una cadena ni abre conexiones de red.
+// Command demo anuncia la primera versión.
+// No mina, no firma y no incorpora bloques.
 package main
 
 import "fmt"
 
 func main() {
-	fmt.Println("Esqueleto académico: blockchain con Proof of Activity. Implementación pendiente.")
+	fmt.Println("Primera versión lineal definida. Minería, selección, firmas y alta siguen pendientes.")
 }

@@ -1,8 +1,9 @@
-// Package consensus reserva las fases de Proof of Activity.
+// Package consensus reserva la minería y la elección de tres satoshis.
 //
-// Proof of Activity no es Proof of Authority, ni consiste en reunir la
-// firma de todos los usuarios. Los participantes y el umbral quedan
-// pendientes de definir.
+// La primera versión corre en un proceso y extiende una cadena lineal.
+// Elegir un satoshi no depende de una lista de candidatos ni de quién esté
+// conectado: el dueño se consulta después en el estado confirmado.
+// Bifurcaciones, reorganización y red quedan fuera de este paquete.
 package consensus
 
 import (
@@ -11,52 +12,28 @@ import (
 	"poa-demo/internal/blockchain"
 )
 
-// ErrNotImplemented lo devuelve toda operación de consenso pendiente.
-var ErrNotImplemented = errors.New("consensus: not implemented")
-
-// Selector elige a los validadores que deben firmar un bloque candidato.
-// El conjunto de candidatos y el umbral de aceptación no están definidos.
-type Selector interface {
-	SelectValidators(candidates []blockchain.Validator) ([]blockchain.Validator, error)
-}
-
-// Activity ejecuta las cuatro fases de Proof of Activity, en este orden:
-//  1. Minar un encabezado candidato con prueba de trabajo.
-//  2. Seleccionar validadores según su participación.
-//  3. Recoger las firmas de los validadores seleccionados.
-//  4. Finalizar el bloque e incorporarlo a la cadena.
-type Activity interface {
-	MineCandidateHeader(block *blockchain.Block) error
-	SelectValidatorsByParticipation(candidates []blockchain.Validator) ([]blockchain.Validator, error)
-	CollectSelectedSignatures(block *blockchain.Block, selected []blockchain.Validator) error
-	FinalizeAndAppend(chain *blockchain.Chain, block *blockchain.Block) error
-}
-
-// Pending reserva la selección y las cuatro fases.
-// No elige validadores, no firma y no modifica la cadena.
-type Pending struct{}
-
 var (
-	_ Selector = Pending{}
-	_ Activity = Pending{}
+	// ErrNotImplemented lo devuelven minería y selección.
+	// Ninguna de las dos acepta un bloque ni devuelve un candidato válido.
+	ErrNotImplemented = errors.New("consensus: not implemented")
+
+	ErrEmptySupply = errors.New("consensus: no hay satoshis para elegir")
 )
 
-func (Pending) SelectValidators([]blockchain.Validator) ([]blockchain.Validator, error) {
-	return nil, ErrNotImplemented
+// Mine busca un nonce para la cabecera hija de tip.
+// Cuando exista, devolverá solo la cabecera. No escribe en la cadena.
+func Mine(tip blockchain.Block, miner blockchain.Address, bits int) (blockchain.Header, error) {
+	return blockchain.Header{}, ErrNotImplemented
 }
 
-func (Pending) MineCandidateHeader(*blockchain.Block) error {
-	return ErrNotImplemented
-}
-
-func (Pending) SelectValidatorsByParticipation([]blockchain.Validator) ([]blockchain.Validator, error) {
-	return nil, ErrNotImplemented
-}
-
-func (Pending) CollectSelectedSignatures(*blockchain.Block, []blockchain.Validator) error {
-	return ErrNotImplemented
-}
-
-func (Pending) FinalizeAndAppend(*blockchain.Chain, *blockchain.Block) error {
-	return ErrNotImplemented
+// Select deriva tres índices a partir de la cabecera, su padre y la posición.
+// supply es la cantidad de satoshis existentes, con identificadores 0..supply-1.
+// El mismo dueño puede ocupar más de un cupo. Un dueño desconectado sigue
+// siendo elegible. El módulo tiene que descartar el resto del rango cuando
+// supply no es potencia de dos, para no favorecer índices bajos.
+func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error) {
+	if supply == 0 {
+		return [3]blockchain.SatoshiID{}, ErrEmptySupply
+	}
+	return [3]blockchain.SatoshiID{}, ErrNotImplemented
 }

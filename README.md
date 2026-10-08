@@ -1,73 +1,49 @@
 # Blockchain académica — Proof of Activity
 
-Esqueleto en Go para una demo de cátedra. Define los modelos, las interfaces y el orden de las fases de Proof of Activity (prueba de actividad). No implementa el consenso, la criptografía ni la validación.
+Primera versión local de una demo de cátedra. El modelo ya está definido. Minería, selección, firmas y alta de bloques siguen pendientes: esas funciones devuelven error y no confirman un bloque.
 
-Proof of Activity no es Proof of Authority. Tampoco consiste en esperar la firma de todos los usuarios: quiénes participan y qué umbral alcanza todavía no está definido.
+## Alcance
 
-## Objetivo
+- Un solo proceso.
+- Tres posiciones de validación.
+- Satoshis individuales, cada uno con un propietario.
+- Cadena lineal, con un único tip.
+- Sin emisión nueva ni comisiones.
 
-Dejar una base mínima, comprensible y compilable para repartir el trabajo. Los identificadores públicos serán UUID. Un UUID no es una clave privada, y `hash(UUID || contenido)` no es una firma digital.
+Proof of Activity elige satoshis y después consulta a sus dueños. No usa una lista previa de candidatos. Un mismo nodo puede minar, firmar un cupo y transaccionar.
+
+## Límites
+
+Estas tres extensiones no están diseñadas:
+
+- Bifurcaciones: hay un solo mapa de dueños. Otro hijo del mismo padre no tiene un estado propio.
+- Reorganización: `Append` solo acepta un bloque cuyo padre es el tip.
+- Red: «desconectado» significa que este proceso no llama a firmar. No hay mensajes ni pares.
 
 ## Estructura
 
 | Ruta | Rol |
 | --- | --- |
-| `cmd/demo/main.go` | Ejecutable. Solo anuncia que la implementación está pendiente. |
-| `internal/blockchain/types.go` | `Transaction`, `Signature`, `Validator`, `Block` y `Chain`. |
-| `internal/blockchain/chain.go` | Hash de bloque, validación e incorporación a la cadena. |
-| `internal/consensus/poa.go` | Selección de validadores y las cuatro fases. |
-| `internal/signing/signer.go` | Firmar y verificar mensajes, sin algoritmo fijo. |
+| `cmd/demo/main.go` | Anuncia que la ronda todavía no se ejecuta. |
+| `internal/blockchain/types.go` | `SatoshiID`, `Address`, `Header`, `Signature`, `Tx`, `Block` y `Chain`. |
+| `internal/blockchain/chain.go` | Bytes canónicos, génesis, hash de cabecera y alta lineal. |
+| `internal/consensus/poa.go` | `Mine` y `Select`. |
+| `internal/signing/signer.go` | Clave local, `Sign`, `Verify` y `CreateTx`. |
 
-Solo se usa la biblioteca estándar.
+La clave privada queda en `signing.Local`. No entra en bloques, transacciones ni en la génesis. Una dirección entera no reemplaza a la clave pública. El hash de la cabecera no reemplaza la verificación de cada firma.
 
-## Modelos
+`NewLinear` asigna el satoshi `i` a `owners[i]` y deja la génesis como tip. Ese bloque inicial no pasa por las tres firmas.
 
-- `Transaction`: identificador, emisor, destinatario, monto y una firma.
-- `Signature`: identificador público del firmante y los bytes de la firma.
-- `Validator`: identificador público de un validador.
-- `Block`: transacciones, hash anterior, hash propio, firmas del bloque y `ChildBlock`.
-- `Chain`: bloques indexados por hash y hash de la cabeza.
+## Reparto
 
-`ChildBlock` es una simplificación para una cadena lineal: guarda el sucesor único. No modela bifurcaciones ni ramas competidoras.
-
-## Fases previstas
-
-1. Minar un encabezado candidato con prueba de trabajo.
-2. Elegir validadores según su participación.
-3. Recoger las firmas de esos validadores.
-4. Finalizar el bloque e incorporarlo a la cadena.
-
-Ninguna fase está implementada. Los métodos concretos devuelven `ErrNotImplemented`. No producen un hash, una firma ni un bloque válido.
-
-## Firmas y hash
-
-La interfaz de firma no fija el algoritmo: más adelante se puede elegir Ed25519, ECDSA u otro. No queda impuesto RSA.
-
-Un hash final puede comprometer el contenido y el conjunto de firmas. Ese hash no sustituye la verificación de cada firma. Si en una prueba posterior se usa `hash(UUID || contenido)`, será solo una simulación, sin autenticidad criptográfica.
-
-Esta etapa no genera claves, UUID, hashes ni firmas.
-
-## Decisiones pendientes
-
-- Algoritmo de firma.
-- Cómo se seleccionan los validadores y cuál es el umbral.
-- Serialización canónica.
-- Qué bytes exactos se firman y qué entra en el hash del bloque.
+1. Tipos, `NewLinear` y los mensajes canónicos: ya están en este commit.
+2. Integrante A: algoritmo de `Sign` y `Verify` en `internal/signing`.
+3. Integrante B: `Mine`, `Select` y completar `Append` en `internal/consensus` e `internal/blockchain`.
+4. Los dos: la ronda en `cmd/demo`, cuando esas funciones ya rechacen de verdad y no antes con un bloque simulado.
 
 ## Comandos
-
-Desde este directorio:
 
 ```powershell
 go run ./cmd/demo
 go test ./...
 ```
-
-## Reparto sugerido
-
-1. Firmas: algoritmo, serialización canónica y bytes que se firman (`internal/signing`).
-2. Cadena: hash del bloque, validación de transacciones y bloques, e incorporación (`internal/blockchain`).
-3. Consenso: las cuatro fases, el criterio de participación y el umbral (`internal/consensus`). El umbral no es «firman todos».
-4. Integración: enlazar las fases en `cmd/demo` cuando esas piezas existan, sin abrir la red.
-
-Entre dos integrantes, una persona puede tomar la firma y la serialización, y la otra el consenso y la cadena.

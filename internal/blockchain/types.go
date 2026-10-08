@@ -1,44 +1,56 @@
-// Package blockchain define el modelo de una cadena lineal académica.
-// Los identificadores son UUID públicos. No son claves privadas.
+// Package blockchain define la primera versión local:
+// un proceso, tres posiciones, satoshis individuales y una cadena lineal.
+// Las claves privadas no pertenecen a este paquete.
 package blockchain
 
-// Signature es una firma desacoplada, independiente del algoritmo.
-// SignerID es el identificador público del firmante (UUID), no una clave privada.
-// Value guardará los bytes de la firma cuando se elija un algoritmo.
-// hash(UUID || contenido) no debe usarse como firma digital.
+// SatoshiID identifica una unidad. En la génesis los identificadores son 0..n-1.
+type SatoshiID uint32
+
+// Address es un identificador entero. No prueba identidad por sí sola:
+// la firma se verifica con la clave pública que el proceso asocia a esa dirección.
+type Address uint32
+
+// Hash es el SHA-256 de una cabecera canónica.
+type Hash [32]byte
+
+// Header es la cabecera de trabajo. No incluye transacciones.
+type Header struct {
+	Prev   Hash
+	Miner  Address
+	Height uint64
+	Nonce  uint64
+}
+
+// Signature autentica un mensaje.
+// Value son los bytes de la firma, no una dirección cifrada.
+// Position es el cupo 0, 1 o 2. En la autorización de una transacción se ignora.
 type Signature struct {
-	SignerID string
+	Signer   Address
+	Position uint8
 	Value    []byte
 }
 
-// Transaction es una transferencia entre dos identificadores públicos.
-type Transaction struct {
-	ID          string
-	SenderID    string
-	RecipientID string
-	Amount      uint64
-	Signature   Signature
+// Tx transfiere satoshis concretos. La lista sola no autoriza el movimiento:
+// hacen falta emisor, receptor y Auth.
+type Tx struct {
+	Satoshis  []SatoshiID
+	Sender    Address
+	Recipient Address
+	Auth      Signature
 }
 
-// Validator es un participante que puede ser elegido para firmar un bloque.
-// Quiénes entran en la selección y qué umbral basta siguen sin definir.
-type Validator struct {
-	ID string
-}
-
-// Block es un eslabón de una cadena lineal.
-// ChildBlock guarda el hash del único sucesor. No representa bifurcaciones
-// ni ramas en competencia.
+// Block reúne la cabecera, las tres firmas y las transacciones.
+// La clave del mapa es HashHeader, no un campo guardado aparte.
 type Block struct {
-	Transactions    []Transaction
-	PreviousHash    string
-	BlockHash       string
-	BlockSignatures []Signature
-	ChildBlock      string
+	Header     Header
+	Signatures [3]Signature
+	Txs        []Tx
 }
 
-// Chain indexa los bloques por su hash. HeadHash es la cabeza actual.
+// Chain es lineal. Owners es la única propiedad confirmada.
+// Tip es el único extremo aceptado.
 type Chain struct {
-	Blocks   map[string]*Block
-	HeadHash string
+	Blocks map[Hash]Block
+	Tip    Hash
+	Owners map[SatoshiID]Address
 }
