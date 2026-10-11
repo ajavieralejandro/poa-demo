@@ -1,3 +1,4 @@
+import "fmt"
 // Package blockchain define la primera versión local:
 // un proceso, tres posiciones, satoshis individuales y una cadena lineal.
 // Las claves privadas no pertenecen a este paquete.
@@ -53,4 +54,17 @@ type Chain struct {
 	Blocks map[Hash]Block
 	Tip    Hash
 	Owners map[SatoshiID]Address
+}
+// Summary retorna una representación formateada del bloque.
+func (b Block) Summary() string {
+	n := b.Header.Height
+	nonce := b.Header.Nonce
+	hash := b.Header.Hash()
+
+	hashCorto := hash
+	if len(hash) >= 8 {
+		hashCorto = hash[:8]
+	}
+
+	return fmt.Sprintf("Height: %d | Nonce: %d | Hash: %s...", n, nonce, hashCorto)
 }
