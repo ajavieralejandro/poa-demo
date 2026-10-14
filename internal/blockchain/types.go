@@ -1,8 +1,9 @@
-import "fmt"
 // Package blockchain define la primera versión local:
+package blockchain
+
 // un proceso, tres posiciones, satoshis individuales y una cadena lineal.
 // Las claves privadas no pertenecen a este paquete.
-package blockchain
+import "fmt"
 
 // SatoshiID identifica una unidad. En la génesis los identificadores son 0..n-1.
 type SatoshiID uint32
@@ -56,15 +57,19 @@ type Chain struct {
 	Owners map[SatoshiID]Address
 }
 // Summary retorna una representación formateada del bloque.
+// Summary retorna una representación formateada y segura del bloque.
 func (b Block) Summary() string {
 	n := b.Header.Height
 	nonce := b.Header.Nonce
-	hash := b.Header.Hash()
-
-	hashCorto := hash
-	if len(hash) >= 8 {
-		hashCorto = hash[:8]
-	}
+	
+	// Obtenemos el hash completo (que es un [32]byte)
+	hashArray := b.Header.Hash()
+	
+	// Convertimos el arreglo fijo a slice para poder cortarlo de forma segura
+	hashSlice := hashArray[:]
+	
+	// Tomamos los primeros 4 bytes y los formateamos como texto hexadecimal
+	hashCorto := fmt.Sprintf("%x", hashSlice[:4])
 
 	return fmt.Sprintf("Height: %d | Nonce: %d | Hash: %s...", n, nonce, hashCorto)
 }
