@@ -36,6 +36,16 @@ func Verify(public, message, sig []byte) error {
 	return ErrNotImplemented
 }
 
+func CreateTx(transaccion blockchain.Tx) error {
+    err := ValidateTxParams(transaccion.Sender, transaccion.Recipient, transaccion.Satoshis)
+    if err != nil {
+        return err
+    }
+    
+    // Aquí continuaría el flujo si la validación es exitosa...
+    return nil
+}
+
 // ValidateTxParams verifica la validez de los parámetros básicos de una transacción.
 func ValidateTxParams(me, to blockchain.Address, ids []blockchain.SatoshiID) error {
 	// 1) Que las direcciones no sean cero (Address es uint32)
