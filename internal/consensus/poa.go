@@ -23,17 +23,82 @@ var (
 // Mine busca un nonce para la cabecera hija de tip.
 // Cuando exista, devolverá solo la cabecera. No escribe en la cadena.
 func Mine(tip blockchain.Block, miner blockchain.Address, bits int) (blockchain.Header, error) {
+	// 1. Preparamos la cabecera base conectándola con el bloque anterior (tip)
+	// Pista: El Height debe ser tip.Header.Height + 1, y el Prev debe ser el Hash del tip.
+	prevHash := tip.Header.Hash() // Asumiendo que Hash() es el método de la cabecera
+
+    h := blockchain.Header{
+        Prev:   prevHash,
+        Miner:  miner,
+        Height: tip.Header.Height + 1,
+        Nonce:  0,
+    }
+
+	// 2. Bucle de búsqueda (Proof of Work)
+	for {
+		// TODO: Implementar o llamar a la función que calcula el hash de la cabecera actual (h)
+		currentHash := h.Hash()
+		// TODO: Implementar o llamar a la función que verifica la dificultad (ej: contar ceros iniciales)
+		 if cumpleDificultad(currentHash, bits) {
+		     return h, nil
+		 }
+
+		// Si no se cumple, incrementamos el nonce para probar con el siguiente
+		h.Nonce++}
 	return blockchain.Header{}, ErrNotImplemented
 }
+func cumpleDificultad(hash blockchain.Hash, bits int) bool {
+    // Definimos cuántos bytes completos deben ser 0 (asumiendo que 'bits' es múltiplo de 8, o ajustándolo)
+    bytesRequeridos := bits / 8
+    if bytesRequeridos > len(hash) {
+        return false
+    }
 
+    for i := 0; i < bytesRequeridos; i++ {
+        if hash[i] != 0 {
+            return false
+        }
+    }
+    return true
+}
 // Select deriva tres índices a partir de la cabecera, su padre y la posición.
 // supply es la cantidad de satoshis existentes, con identificadores 0..supply-1.
-// El mismo dueño puede ocupar más de un cupo. Un dueño desconectado sigue
-// siendo elegible. El módulo tiene que descartar el resto del rango cuando
-// supply no es potencia de dos, para no favorecer índices bajos.
+// El módulo tiene que descartar el resto del rango cuando supply no es potencia de dos, 
+// para no favorecer índices bajos (Rejection Sampling).
+// esValidoSinSesgo verifica si el valor aleatorio está por debajo del límite que genera sesgo.
+func esValidoSinSesgo(valorAleatorio uint64, supply uint32) bool {
+	maxVal := (^uint64(0)) - ((^uint64(0)) % uint64(supply))
+	return valorAleatorio < maxVal
+}
+
 func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error) {
 	if supply == 0 {
 		return [3]blockchain.SatoshiID{}, ErrEmptySupply
 	}
-	return [3]blockchain.SatoshiID{}, ErrNotImplemented
+
+	var out [3]blockchain.SatoshiID
+
+	for pos := uint8(0); pos < 3; pos++ {
+		// 1. Obtener el hash base de la cabecera
+		hashBase := h.Hash()
+
+		// 2. Combinar el hash base con la posición (pos) y volver a hashear
+		dataToHash := append(hashBase[:], pos)
+		nuevoHash := sha256.Sum256(dataToHash)
+
+		// 3. Convertir los primeros 8 bytes del hash en uint64
+		valorAleatorio := binary.BigEndian.Uint64(nuevoHash[0:8])
+
+		// 4. Rejection sampling: si cae en la zona prohibida, repetimos la iteración (pos--)
+		if !esValidoSinSesgo(valorAleatorio, supply) {
+			pos--
+			continue
+		}
+
+		// 5. Aplicar módulo y asignar el SatoshiID convertido explícitamente
+		indice := valorAleatorio % uint64(supply)
+		out[pos] = blockchain.SatoshiID(indice)
+	}
+
+	return out, nil
 }
