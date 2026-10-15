@@ -16,7 +16,8 @@ var (
 	// ErrNotImplemented lo devuelven minería y selección.
 	// Ninguna de las dos acepta un bloque ni devuelve un candidato válido.
 	ErrNotImplemented = errors.New("consensus: not implemented")
-
+	ErrIncorrectBlock = errors.New("block : not dificulty values")
+	ErrSignatureFail = errors.New("block  : different signatures error")
 	ErrEmptySupply = errors.New("consensus: no hay satoshis para elegir")
 )
 
@@ -101,4 +102,45 @@ func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error)
 	}
 
 	return out, nil
+}
+
+// Verify valida si un bloque recibido por la red es totalmente correcto.
+// Comprueba el Proof of Work y que los validadores firmantes coincidan con el sorteo (independientemente del orden).
+func Verify(block blockchain.Block, parent blockchain.Block, bits int, supply uint32) (bool, error) {
+	
+	// 1. Verificar el Proof of Work de la cabecera del bloque actual.
+	hashActual := block.Header.Hash()
+	if !cumpleDificultad(hashActual, bits) {
+		return false, errors.New("consensus: el bloque no cumple con la dificultad de PoW requerida")
+	}
+
+	// 2. Volver a ejecutar Select utilizando la cabecera del bloque PADRE (parent)
+	validadoresEsperados, err := Select(parent.Header, supply)
+	if err != nil {
+		return false, err
+	}
+
+	// 3. Robustez: Verificar que cada firmante del bloque esté presente en los validadores esperados,
+	// sin importar el orden en el que vengan declarados.
+	for _, firmante := range block.Signers {
+		encontrado := false
+		for _, esperado := range validadoresEsperados {
+			if firmante == esperado {
+				encontrado = true
+				break
+			}
+		}
+		
+		// Si algún firmante no forma parte del sorteo oficial, el bloque es inválido.
+		if !encontrado {
+			return false, errors.New("consensus: el bloque incluye un firmante que no fue seleccionado en el sorteo")
+		}
+	}
+
+	// Opcional: También asegurarnos de que la cantidad de firmantes coincida exactamente (ej: los 3 cupos completos)
+	if len(block.Signers) != len(validadoresEsperados) {
+		return false, errors.New("consensus: la cantidad de firmas no coincide con los cupos requeridos")
+	}
+
+	return true, nil
 }
