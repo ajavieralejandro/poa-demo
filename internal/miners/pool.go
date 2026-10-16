@@ -10,30 +10,92 @@ type Pool struct {
 	Miners []Miner
 }
 
+/package miner
+
+import (
+	"crypto/sha256"
+	"encoding/binary"
+	"sort"
+
+	"poa-demo/internal/blockchain"
+)
+
+// Estructura auxiliar interna para ordenar los mineros por su hash de forma determinista
+type minerHashPair struct {
+	addr    Address
+	hashVal uint64
+}
+
 // NewDeterministicPool inicializa el pool y reparte los satoshis del supply 
 // entre los mineros de forma determinista usando hashing de sus direcciones.
 func NewDeterministicPool(addresses []Address, supply uint32) *Pool {
-	// TODO 1: Calcular cuántos tokens base le corresponden a cada minero 
-	// (por ejemplo: supply / número total de direcciones).
+	numMiners := uint32(len(addresses))
+	tokensPorMinero := supply / numMiners
 
-	// TODO 2: Iterar sobre cada Address:
-	// a) Aplicar la función de hash (ej: sha256.Sum256([]byte(address...)))
-	// b) Convertir los primeros bytes del hash resultante a un número entero uint64 
-	//    usando binary.BigEndian.Uint64(...)
-	// c) Aplicar un módulo (%) con el supply para asegurarse de que caiga 
-	//    dentro del rango válido de IDs de satoshis.
+	// 1. Calcular el hash criptográfico para cada dirección y pasarlo a uint64
+	pairs := make([]minerHashPair, len(addresses))
+	for i, addr := range addresses {
+		// Convertir la dirección (uint32) a bytes para poder hacerle el hash
+		addrBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(addrBytes, uint32(addr))
 
-	// TODO 3: Crear las instancias de Miner con sus respectivos SatoshiIDs asignados 
-	// y agregarlos a la estructura Pool.
+		// a) Aplicar función SHA-256
+		hashSum := sha256.Sum256(addrBytes)
+
+		// b) Convertir los primeros 8 bytes del resultado a un entero uint64
+		hashVal := binary.BigEndian.Uint64(hashSum[0:8])
+
+		pairs[i] = minerHashPair{
+			addr:    addr,
+			hashVal: hashVal,
+		}
+	}
+
+	// 2. Ordenar los mineros según su valor de hash numérico. 
+	// Esto garantiza que todos los nodos de la red ordenen a los mineros exactamente igual.
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].hashVal < pairs[j].hashVal
+	})
+
+	// 3. Asignar los rangos de SatoshiIDs de manera contigua sin huecos
+	miners := make([]Miner, numMiners)
+	for i := uint32(0); i < numMiners; i++ {
+		inicio := i * tokensPorMinero
+		
+		// El último minero absorbe cualquier residuo matemático por redondeo del supply
+		var fin uint32
+		if i == numMiners-1 {
+			fin = supply - 1
+		} else {
+			fin = (i+1)*tokensPorMinero - 1
+		}
+
+		// Rellenar la lista de SatoshiIDs correspondientes a este minero
+		var satoshis []SatoshiID
+		for s := inicio; s <= fin; s++ {
+			satoshis = append(satoshis, SatoshiID(s))
+		}
+
+		miners[i] = Miner{
+			Addr:     pairs[i].addr,
+			Satoshis: satoshis,
+			Blocks:   []blockchain.Block{},
+		}
+	}
 
 	return &Pool{
-		Miners: []Miner{}, // Reemplazar con los mineros inicializados
+		Miners: miners,
 	}
 }
 
 // FindOwner busca en el pool qué minero es el propietario de un SatoshiID dado.
 func (p *Pool) FindOwner(satID SatoshiID) (Miner, error) {
-	// TODO: Recorrer los mineros del pool y revisar sus listas o rangos de satoshis
-	// para retornar el minero dueño del satID, o un error si no se encuentra.
+	for _, miner := range p.Miners {
+		for _, id := range miner.Satoshis {
+			if id == satID {
+				return miner, nil
+			}
+		}
+	}
 	return Miner{}, nil
 }
