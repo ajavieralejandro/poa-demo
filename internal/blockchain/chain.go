@@ -105,16 +105,16 @@ func appendU32(dst []byte, v uint32) []byte {
 	return append(dst, buf[:]...)
 }
 
-func newGenesisBlock() Block{
+func NewGenesisBlock() Block {
 	return Block{
-        Header: Header{
-            Height: 0,
-            Nonce:  0,
-            Prev:   [32]byte{}, // Un arreglo de 32 ceros
-        },
-        Signatures: [3]Signature{}, // Arreglo vacío de firmas para el génesis
-        Txs:        []Tx{},         // Sin transacciones iniciales
-    }
+		Header: Header{
+			Height: 0,
+			Nonce:  0,
+			Prev:   [32]byte{}, // Un arreglo de 32 ceros
+		},
+		Signatures: [3]Signature{}, // Arreglo vacío de firmas para el génesis
+		Txs:        []Tx{},         // Sin transacciones iniciales
+	}
 }
 
 func appendU64(dst []byte, v uint64) []byte {
