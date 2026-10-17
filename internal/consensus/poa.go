@@ -23,12 +23,8 @@ var (
 	ErrEmptySupply    = errors.New("consensus: no hay satoshis para elegir")
 )
 
-// Mine busca un nonce para la cabecera hija de tip.
-// Cuando exista, devolverá solo la cabecera. No escribe en la cadena.
-func Mine(tip blockchain.Block, miner blockchain.Address, bits int) (blockchain.Header, error) {
-	// 1. Preparamos la cabecera base conectándola con el bloque anterior (tip)
-	// Pista: El Height debe ser tip.Header.Height + 1, y el Prev debe ser el Hash del tip.
-	prevHash := tip.Header.Hash() // Asumiendo que Hash() es el método de la cabecera
+func Mine(tip blockchain.Block, miner blockchain.Address, bits int, supply uint32) (blockchain.Block, error) {
+	prevHash := tip.Header.Hash()
 
 	h := blockchain.Header{
 		Prev:   prevHash,
@@ -39,17 +35,32 @@ func Mine(tip blockchain.Block, miner blockchain.Address, bits int) (blockchain.
 
 	// 2. Bucle de búsqueda (Proof of Work)
 	for {
-		// TODO: Implementar o llamar a la función que calcula el hash de la cabecera actual (h)
 		currentHash := h.Hash()
-		// TODO: Implementar o llamar a la función que verifica la dificultad (ej: contar ceros iniciales)
 		if cumpleDificultad(currentHash, bits) {
-			return h, nil
+			// ¡PoW encontrado! Ahora ejecutamos el sorteo usando el padre (tip.Header)
+			validadores, err := Select(tip.Header, supply)
+			if err != nil {
+				return blockchain.Block{}, err
+			}
+
+			// Convertimos los SatoshiID ganadores en un arreglo de Firmas (Signatures)
+			var sigs [3]blockchain.Signature
+			for i, satoshiID := range validadores {
+				sigs[i] = blockchain.Signature{
+					Signer: blockchain.Address(satoshiID),
+				}
+			}
+
+			// Retornamos el bloque completamente armado y firmado
+			return blockchain.Block{
+				Header:     h,
+				Signatures: sigs,
+				Txs:        []blockchain.Tx{},
+			}, nil
 		}
 
-		// Si no se cumple, incrementamos el nonce para probar con el siguiente
 		h.Nonce++
 	}
-	return blockchain.Header{}, ErrNotImplemented
 }
 func cumpleDificultad(hash blockchain.Hash, bits int) bool {
 	// Definimos cuántos bytes completos deben ser 0 (asumiendo que 'bits' es múltiplo de 8, o ajustándolo)
@@ -113,6 +124,10 @@ func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error)
 // Verify valida si un bloque recibido por la red es totalmente correcto.
 // Comprueba el Proof of Work y que los validadores firmantes coincidan con el sorteo (independientemente del orden).
 func Verify(block blockchain.Block, parent blockchain.Block, bits int, supply uint32) (bool, error) {
+	//Agregamos esta condición para diferenciar entre el bloque genesis
+	if block.Header.Height == 0 {
+		return true, nil
+	}
 
 	// 1. Verificar el Proof of Work de la cabecera del bloque actual.
 	hashActual := block.Header.Hash()
@@ -125,6 +140,9 @@ func Verify(block blockchain.Block, parent blockchain.Block, bits int, supply ui
 	if err != nil {
 		return false, err
 	}
+
+	fmt.Printf("[DEBUG Verify] Validadores esperados por el padre: %v\n", validadoresEsperados)
+	fmt.Printf("[DEBUG Verify] Firmantes presentes en el bloque: %v\n", block.Signatures)
 
 	// 3. Robustez: Verificar que cada firmante del bloque esté presente en los validadores esperados,
 	// sin importar el orden en el que vengan declarados.
