@@ -3,7 +3,12 @@ package blockchain
 
 // un proceso, tres posiciones, satoshis individuales y una cadena lineal.
 // Las claves privadas no pertenecen a este paquete.
-import "fmt"
+import (
+	"fmt"
+	"encoding/binary"
+	"crypto/sha256"
+)
+
 
 // SatoshiID identifica una unidad. En la génesis los identificadores son 0..n-1.
 type SatoshiID uint32
@@ -70,4 +75,30 @@ func (b Block) Summary() string {
     hashCorto := fmt.Sprintf("%x", hashArray[:4])
 
     return fmt.Sprintf("Height: %d | Nonce: %d | Hash: %s...", n, nonce, hashCorto)
+}
+// Hash calcula y devuelve el SHA-256 canónico de la cabecera.
+func (h Header) Hash() Hash {
+	// 1. Preparamos un slice de bytes para acumular los campos de la cabecera
+	var buf []byte
+
+	// 2. Agregamos el campo Prev (que ya es un [32]byte / Hash)
+	buf = append(buf, h.Prev[:]...)
+
+	// 3. Serializamos el campo Miner (Address es uint32) a bytes usando BigEndian
+	minerBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(minerBytes, uint32(h.Miner))
+	buf = append(buf, minerBytes...)
+
+	// 4. Serializamos el campo Height (uint64) a bytes
+	heightBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(heightBytes, h.Height)
+	buf = append(buf, heightBytes...)
+
+	// 5. Serializamos el campo Nonce (uint64) a bytes
+	nonceBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(nonceBytes, h.Nonce)
+	buf = append(buf, nonceBytes...)
+
+	// 6. Retornamos el resultado del hash en crudo (que es de tipo Hash / [32]byte)
+	return sha256.Sum256(buf)
 }

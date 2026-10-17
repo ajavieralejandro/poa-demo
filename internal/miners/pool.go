@@ -1,36 +1,20 @@
 package miners
 
 import (
-	// TODO: Importar los paquetes necesarios para hash y conversión numérica 
+	// TODO: Importar los paquetes necesarios para hash y conversión numérica
 	// (ej: "crypto/sha256", "encoding/binary")
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"poa-demo/internal/blockchain"
-
-)
-
-// Pool centraliza la gestión de todos los nodos mineros de la red.
-type Pool struct {
-	Miners []Miner
-}
-
-/package miner
-
-import (
-	"crypto/sha256"
-	"encoding/binary"
 	"sort"
-
-	"poa-demo/internal/blockchain"
 )
 
-// Estructura auxiliar interna para ordenar los mineros por su hash de forma determinista
-type minerHashPair struct {
-	addr    Address
-	hashVal uint64
-}
+var (
+	ErrEmptySupply = errors.New("Error : empty suplly, no tokens. ")
+)
 
-// NewDeterministicPool inicializa el pool y reparte los satoshis del supply 
+// NewDeterministicPool inicializa el pool y reparte los satoshis del supply
 // entre los mineros de forma determinista usando hashing de sus direcciones.
 func NewDeterministicPool(addresses []Address, supply uint32) *Pool {
 	numMiners := uint32(len(addresses))
@@ -55,7 +39,7 @@ func NewDeterministicPool(addresses []Address, supply uint32) *Pool {
 		}
 	}
 
-	// 2. Ordenar los mineros según su valor de hash numérico. 
+	// 2. Ordenar los mineros según su valor de hash numérico.
 	// Esto garantiza que todos los nodos de la red ordenen a los mineros exactamente igual.
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].hashVal < pairs[j].hashVal
@@ -65,7 +49,7 @@ func NewDeterministicPool(addresses []Address, supply uint32) *Pool {
 	miners := make([]Miner, numMiners)
 	for i := uint32(0); i < numMiners; i++ {
 		inicio := i * tokensPorMinero
-		
+
 		// El último minero absorbe cualquier residuo matemático por redondeo del supply
 		var fin uint32
 		if i == numMiners-1 {
@@ -115,24 +99,20 @@ func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error)
 
 	// Iteramos 3 veces para obtener los 3 cupos de validadores (posiciones 0, 1 y 2)
 	for pos := uint8(0); pos < 3; pos++ {
-		// TODO 1: Preparar los datos a hashear para esta posición específica.
-		// Pista: Necesitamos meter la cabecera 'h' (o algún campo clave de ella) 
-		// y la variable 'pos' en un arreglo de bytes para que cada una de las 3 
-		// vueltas genere un hash completamente distinto.
-		var buf [5]byte
-		binary.BigEndian.PutUint32(buf[0:4], h.Prev)
-		// Guardamos la posición (pos) en el último byte (el byte en la posición 4)
-		buf[4] = pos
+		// 1. Preparamos el búfer de 33 bytes:
+		// Los primeros 32 bytes con el hash anterior (h.Prev)
+		// El último byte (la posición 32) con el valor de 'pos'
+		var buf [33]byte
+		copy(buf[0:32], h.Prev[:])
+		buf[32] = pos
 
-		// TODO 2: Aplicar la función de hash criptográfico (ej: sha256.Sum256(...)) 
-		// sobre esos bytes combinados.
+		// 2. Aplicamos la función de hash criptográfico sobre esos 33 bytes combinados
 		hashResult := sha256.Sum256(buf[:])
-		// TODO 3: Convertir una porción del resultado del hash a un número entero grande 
-		// Pista: Puedes usar binary.BigEndian.Uint64(...) con los primeros 8 bytes del hash.
-		//esto no entiendo bien porque 
+
+		// 3. Tomamos los primeros 8 bytes del hash resultante y los convertimos a uint64
 		numeroGrande := binary.BigEndian.Uint64(hashResult[0:8])
-		// TODO 4: Calcular el SatoshiID ganador usando el operador módulo (%) con el supply, 
-		// y asignarlo a la posición correspondiente:
+
+		// 4. Calculamos el SatoshiID ganador usando el operador módulo (%) con el supply
 		out[pos] = blockchain.SatoshiID(numeroGrande % uint64(supply))
 	}
 

@@ -123,7 +123,7 @@ func Verify(block blockchain.Block, parent blockchain.Block, bits int, supply ui
 
 	// 3. Robustez: Verificar que cada firmante del bloque esté presente en los validadores esperados,
 	// sin importar el orden en el que vengan declarados.
-	for _, firmante := range block.Signers {
+	for _, firmante := range block.Signatures {
 		encontrado := false
 		for _, esperado := range validadoresEsperados {
 			if firmante == esperado {
@@ -139,7 +139,7 @@ func Verify(block blockchain.Block, parent blockchain.Block, bits int, supply ui
 	}
 
 	// Opcional: También asegurarnos de que la cantidad de firmantes coincida exactamente (ej: los 3 cupos completos)
-	if len(block.Signers) != len(validadoresEsperados) {
+	if len(block.Signatures) != len(validadoresEsperados) {
 		return false, errors.New("consensus: la cantidad de firmas no coincide con los cupos requeridos")
 	}
 
