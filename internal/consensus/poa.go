@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"poa-demo/internal/blockchain"
+	"slices"
 )
 
 var (
@@ -21,9 +22,10 @@ var (
 	ErrIncorrectBlock = errors.New("block : not dificulty values")
 	ErrSignatureFail  = errors.New("block  : different signatures error")
 	ErrEmptySupply    = errors.New("consensus: no hay satoshis para elegir")
+	ErrMultySign      = errors.New("consensus: Header proposed can be signed twice by the same validator")
 )
 
-func Mine(tip blockchain.Block, miner blockchain.Address, bits int, supply uint32) (blockchain.Block, error) {
+func Mine(tip blockchain.Block, chain blockchain.Chain, miner blockchain.Address, bits int) (blockchain.Block, error) {
 	prevHash := tip.Header.Hash()
 
 	h := blockchain.Header{
@@ -31,6 +33,7 @@ func Mine(tip blockchain.Block, miner blockchain.Address, bits int, supply uint3
 		Miner:  miner,
 		Height: tip.Header.Height + 1,
 		Nonce:  0,
+		Supply: tip.Header.Supply,
 	}
 
 	// 2. Bucle de búsqueda (Proof of Work)
@@ -38,18 +41,17 @@ func Mine(tip blockchain.Block, miner blockchain.Address, bits int, supply uint3
 		currentHash := h.Hash()
 		if cumpleDificultad(currentHash, bits) {
 			// ¡PoW encontrado! Ahora ejecutamos el sorteo usando el padre (tip.Header)
-			validadores, err := Select(tip.Header, supply)
-			if err != nil {
+			_, err := Select(tip.Header, chain)
+			if errors.Is(err, ErrMultySign) {
+				h.Nonce++
+				continue
+			}
+			if err != nil && !errors.Is(err, ErrMultySign) {
 				return blockchain.Block{}, err
 			}
 
 			// Convertimos los SatoshiID ganadores en un arreglo de Firmas (Signatures)
 			var sigs [3]blockchain.Signature
-			for i, satoshiID := range validadores {
-				sigs[i] = blockchain.Signature{
-					Signer: blockchain.Address(satoshiID),
-				}
-			}
 
 			// Retornamos el bloque completamente armado y firmado
 			return blockchain.Block{
@@ -87,12 +89,13 @@ func esValidoSinSesgo(valorAleatorio uint64, supply uint32) bool {
 	return valorAleatorio < maxVal
 }
 
-func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error) {
-	if supply == 0 {
+func Select(h blockchain.Header, chain blockchain.Chain) ([3]blockchain.SatoshiID, error) {
+	if h.Supply == 0 {
 		return [3]blockchain.SatoshiID{}, ErrEmptySupply
 	}
 
 	var out [3]blockchain.SatoshiID
+	owners := make(map[blockchain.Address]struct{})
 
 	for pos := uint8(0); pos < 3; pos++ {
 		// 1. Obtener el hash base de la cabecera
@@ -106,14 +109,18 @@ func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error)
 		valorAleatorio := binary.BigEndian.Uint64(nuevoHash[0:8])
 
 		// 4. Rejection sampling: si cae en la zona prohibida, repetimos la iteración (pos--)
-		if !esValidoSinSesgo(valorAleatorio, supply) {
+		if !esValidoSinSesgo(valorAleatorio, h.Supply) {
 			pos--
 			continue
 		}
 
 		// 5. Aplicar módulo y asignar el SatoshiID convertido explícitamente
-		indice := valorAleatorio % uint64(supply)
+		indice := valorAleatorio % uint64(h.Supply)
 		out[pos] = blockchain.SatoshiID(indice)
+		if _, ok := owners[chain.Owners[out[pos]]]; ok {
+			return out, ErrMultySign
+		}
+		owners[chain.Owners[out[pos]]] = struct{}{}
 		fmt.Printf("[DEBUG Select] Posición %d -> SatoshiID elegido: %d\n", pos, indice)
 
 	}
@@ -123,22 +130,26 @@ func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error)
 
 // Verify valida si un bloque recibido por la red es totalmente correcto.
 // Comprueba el Proof of Work y que los validadores firmantes coincidan con el sorteo (independientemente del orden).
-func Verify(block blockchain.Block, parent blockchain.Block, bits int, supply uint32) (bool, error) {
+func Verify(block blockchain.Block, chain blockchain.Chain, bits int) error {
 	//Agregamos esta condición para diferenciar entre el bloque genesis
 	if block.Header.Height == 0 {
-		return true, nil
+		return nil
+	}
+
+	if !slices.Equal(block.Header.Prev[:], chain.Tip[:]) {
+		return ErrIncorrectBlock
 	}
 
 	// 1. Verificar el Proof of Work de la cabecera del bloque actual.
 	hashActual := block.Header.Hash()
 	if !cumpleDificultad(hashActual, bits) {
-		return false, errors.New("consensus: el bloque no cumple con la dificultad de PoW requerida")
+		return errors.New("consensus: el bloque no cumple con la dificultad de PoW requerida")
 	}
 
 	// 2. Volver a ejecutar Select utilizando la cabecera del bloque PADRE (parent)
-	validadoresEsperados, err := Select(parent.Header, supply)
+	validadoresEsperados, err := Select(block.Header, chain)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	fmt.Printf("[DEBUG Verify] Validadores esperados por el padre: %v\n", validadoresEsperados)
@@ -146,10 +157,11 @@ func Verify(block blockchain.Block, parent blockchain.Block, bits int, supply ui
 
 	// 3. Robustez: Verificar que cada firmante del bloque esté presente en los validadores esperados,
 	// sin importar el orden en el que vengan declarados.
-	for _, firmante := range block.Signatures {
+	for _, firma := range block.Signatures {
 		encontrado := false
 		for _, esperado := range validadoresEsperados {
-			if blockchain.SatoshiID(firmante.Signer) == esperado {
+			//Firma.Valid() para protejer si SatoshiID == 0 y justo no tiene firmante
+			if firma.Valid() && firma.Value == esperado {
 				encontrado = true
 				break
 			}
@@ -157,14 +169,9 @@ func Verify(block blockchain.Block, parent blockchain.Block, bits int, supply ui
 
 		// Si algún firmante no forma parte del sorteo oficial, el bloque es inválido.
 		if !encontrado {
-			return false, errors.New("consensus: el bloque incluye un firmante que no fue seleccionado en el sorteo")
+			return errors.New("consensus: el bloque incluye un firmante que no fue seleccionado en el sorteo")
 		}
 	}
 
-	// Opcional: También asegurarnos de que la cantidad de firmantes coincida exactamente (ej: los 3 cupos completos)
-	if len(block.Signatures) != len(validadoresEsperados) {
-		return false, errors.New("consensus: la cantidad de firmas no coincide con los cupos requeridos")
-	}
-
-	return true, nil
+	return nil
 }

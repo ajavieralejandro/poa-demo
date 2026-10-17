@@ -9,14 +9,14 @@ import (
 var (
 	// ErrNotImplemented lo devuelve la alta mientras minería, selección
 	// y firmas sigan pendientes. Append no confirma un bloque en ese caso.
-	ErrNotImplemented = errors.New("blockchain: not implemented")
-
-	ErrNotLinearTip     = errors.New("blockchain: el bloque no extiende el tip")
-	ErrEmptyTx          = errors.New("blockchain: la transacción no indica satoshis")
-	ErrUnknownSatoshi   = errors.New("blockchain: el satoshi no existe")
-	ErrNotOwner         = errors.New("blockchain: el satoshi no pertenece al emisor")
-	ErrDuplicateSatoshi = errors.New("blockchain: satoshi repetido")
-	ErrAlreadyPending   = errors.New("blockchain: el satoshi ya está en una transacción pendiente")
+	ErrNotImplemented    = errors.New("blockchain: not implemented")
+	ErrMissingSignatures = errors.New("blockchain: el bloque no tiene las firmas necesarias")
+	ErrNotLinearTip      = errors.New("blockchain: el bloque no extiende el tip")
+	ErrEmptyTx           = errors.New("blockchain: la transacción no indica satoshis")
+	ErrUnknownSatoshi    = errors.New("blockchain: el satoshi no existe")
+	ErrNotOwner          = errors.New("blockchain: el satoshi no pertenece al emisor")
+	ErrDuplicateSatoshi  = errors.New("blockchain: satoshi repetido")
+	ErrAlreadyPending    = errors.New("blockchain: el satoshi ya está en una transacción pendiente")
 )
 
 // HeaderBytes es la codificación canónica: Prev, Miner, Height, Nonce.
@@ -105,12 +105,13 @@ func appendU32(dst []byte, v uint32) []byte {
 	return append(dst, buf[:]...)
 }
 
-func NewGenesisBlock() Block {
+func NewGenesisBlock(supply uint32) Block {
 	return Block{
 		Header: Header{
 			Height: 0,
 			Nonce:  0,
 			Prev:   [32]byte{}, // Un arreglo de 32 ceros
+			Supply: supply,
 		},
 		Signatures: [3]Signature{}, // Arreglo vacío de firmas para el génesis
 		Txs:        []Tx{},         // Sin transacciones iniciales
