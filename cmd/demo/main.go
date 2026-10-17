@@ -20,17 +20,13 @@ func main() {
 
 	// 3. Minamos el primer bloque hijo utilizando el Génesis como padre
 	validadorMiner := blockchain.Address(1)
-	nuevaHeader, err := consensus.Mine(genesis, validadorMiner, dificultad)
+	nuevoBlock, err := consensus.Mine(genesis, validadorMiner, 3, supply)
 	if err != nil {
 		panic(err)
 	}
 
 	// Armamos el bloque hijo usando la cabecera recién minada
-	bloqueHijo := blockchain.Block{
-		Header:     nuevaHeader,
-		Signatures: [3]blockchain.Signature{}, // Aquí irían las firmas reales de los validadores
-		Txs:        []blockchain.Tx{},
-	}
+	bloqueHijo := nuevoBlock
 
 	// Usamos la variable 'nuevaHeader' para imprimir su resumen (adiós error de compilación)
 	fmt.Printf("[Bloque 1 Minado] %s\n", bloqueHijo.Summary())
