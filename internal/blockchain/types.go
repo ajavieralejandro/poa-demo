@@ -59,17 +59,15 @@ type Chain struct {
 // Summary retorna una representación formateada del bloque.
 // Summary retorna una representación formateada y segura del bloque.
 func (b Block) Summary() string {
-	n := b.Header.Height
-	nonce := b.Header.Nonce
-	
-	// Obtenemos el hash completo (que es un [32]byte)
-	hashArray := b.Header.Hash()
-	
-	// Convertimos el arreglo fijo a slice para poder cortarlo de forma segura
-	hashSlice := hashArray[:]
-	
-	// Tomamos los primeros 4 bytes y los formateamos como texto hexadecimal
-	hashCorto := fmt.Sprintf("%x", hashSlice[:4])
+    n := b.Header.Height
+    nonce := b.Header.Nonce
+    
+    // Obtienes el hash de la cabecera usando la función correspondiente de tu paquete blockchain
+    // (Asegúrate de usar el nombre de la función que calcula el hash de la cabecera en tu proyecto, ej: HashHeader(b.Header))
+    hashArray := HashHeader(b.Header) 
+    
+    // Tomamos los primeros 4 bytes y los formateamos como texto hexadecimal
+    hashCorto := fmt.Sprintf("%x", hashArray[:4])
 
-	return fmt.Sprintf("Height: %d | Nonce: %d | Hash: %s...", n, nonce, hashCorto)
+    return fmt.Sprintf("Height: %d | Nonce: %d | Hash: %s...", n, nonce, hashCorto)
 }

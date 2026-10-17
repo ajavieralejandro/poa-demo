@@ -1,7 +1,11 @@
 package miners
 import(
-	"errors"
-)
+	"crypto/sha256"
+    "encoding/binary"
+
+    "poa-demo/internal/blockchain"
+	"errors")
+	
 
 var siguienteSatoshiID uint32 = 0
 // NewMiner inicializa y retorna un nuevo nodo minero con su dirección y sus satoshis asignados.

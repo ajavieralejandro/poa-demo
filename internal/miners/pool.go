@@ -1,8 +1,12 @@
-package miner
+package miners
 
 import (
 	// TODO: Importar los paquetes necesarios para hash y conversión numérica 
 	// (ej: "crypto/sha256", "encoding/binary")
+	"crypto/sha256"
+	"encoding/binary"
+	"poa-demo/internal/blockchain"
+
 )
 
 // Pool centraliza la gestión de todos los nodos mineros de la red.
@@ -98,4 +102,39 @@ func (p *Pool) FindOwner(satID SatoshiID) (Miner, error) {
 		}
 	}
 	return Miner{}, nil
+}
+
+// Select deriva tres índices de satoshis a partir de la cabecera minada (Fase 2: Follow the Satoshi).
+// supply es la cantidad de satoshis existentes (0 .. supply-1).
+func Select(h blockchain.Header, supply uint32) ([3]blockchain.SatoshiID, error) {
+	if supply == 0 {
+		return [3]blockchain.SatoshiID{}, ErrEmptySupply
+	}
+
+	var out [3]blockchain.SatoshiID
+
+	// Iteramos 3 veces para obtener los 3 cupos de validadores (posiciones 0, 1 y 2)
+	for pos := uint8(0); pos < 3; pos++ {
+		// TODO 1: Preparar los datos a hashear para esta posición específica.
+		// Pista: Necesitamos meter la cabecera 'h' (o algún campo clave de ella) 
+		// y la variable 'pos' en un arreglo de bytes para que cada una de las 3 
+		// vueltas genere un hash completamente distinto.
+		var buf [5]byte
+		binary.BigEndian.PutUint32(buf[0:4], h.Prev)
+		// Guardamos la posición (pos) en el último byte (el byte en la posición 4)
+		buf[4] = pos
+
+		// TODO 2: Aplicar la función de hash criptográfico (ej: sha256.Sum256(...)) 
+		// sobre esos bytes combinados.
+		hashResult := sha256.Sum256(buf[:])
+		// TODO 3: Convertir una porción del resultado del hash a un número entero grande 
+		// Pista: Puedes usar binary.BigEndian.Uint64(...) con los primeros 8 bytes del hash.
+		//esto no entiendo bien porque 
+		numeroGrande := binary.BigEndian.Uint64(hashResult[0:8])
+		// TODO 4: Calcular el SatoshiID ganador usando el operador módulo (%) con el supply, 
+		// y asignarlo a la posición correspondiente:
+		out[pos] = blockchain.SatoshiID(numeroGrande % uint64(supply))
+	}
+
+	return out, nil
 }
