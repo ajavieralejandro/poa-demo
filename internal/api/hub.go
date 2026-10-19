@@ -2,21 +2,26 @@ package api
 
 import "sync"
 
-// Hub reparte cada bloque ya serializado a los clientes SSE conectados.
+type streamMessage struct {
+	event string
+	data  []byte
+}
+
+// Hub reparte cada evento ya serializado a los clientes SSE conectados.
 // Un cliente lento no detiene el minado: si su búfer está lleno, se omite el evento.
 type Hub struct {
 	mu      sync.Mutex
-	clients map[chan []byte]struct{}
+	clients map[chan streamMessage]struct{}
 }
 
 // NewHub crea un distribuidor vacío.
 func NewHub() *Hub {
-	return &Hub{clients: make(map[chan []byte]struct{})}
+	return &Hub{clients: make(map[chan streamMessage]struct{})}
 }
 
 // Subscribe registra un cliente. La función devuelta lo da de baja y cierra el canal.
-func (h *Hub) Subscribe() (<-chan []byte, func()) {
-	ch := make(chan []byte, 8)
+func (h *Hub) Subscribe() (<-chan streamMessage, func()) {
+	ch := make(chan streamMessage, 8)
 	h.mu.Lock()
 	h.clients[ch] = struct{}{}
 	h.mu.Unlock()
@@ -36,15 +41,20 @@ func (h *Hub) Subscribe() (<-chan []byte, func()) {
 	return ch, unsubscribe
 }
 
-// Publish envía una copia del payload a cada cliente.
+// Publish envía un evento block. PublishEvent permite status u otros nombres.
 func (h *Hub) Publish(payload []byte) {
-	if len(payload) == 0 {
+	h.PublishEvent("block", payload)
+}
+
+// PublishEvent envía una copia del payload a cada cliente con el nombre de evento indicado.
+func (h *Hub) PublishEvent(event string, payload []byte) {
+	if event == "" || len(payload) == 0 {
 		return
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for ch := range h.clients {
-		message := append([]byte(nil), payload...)
+		message := streamMessage{event: event, data: append([]byte(nil), payload...)}
 		select {
 		case ch <- message:
 		default:

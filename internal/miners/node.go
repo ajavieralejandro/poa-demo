@@ -1,6 +1,7 @@
 package miners
 
 import (
+	"context"
 	"fmt"
 	"poa-demo/internal/blockchain"
 	"poa-demo/internal/consensus"
@@ -17,8 +18,12 @@ func NewNode(addr blockchain.Address, satoshis map[blockchain.SatoshiID]struct{}
 }
 
 func (m *Node) Mine(chain blockchain.Chain, bits int) (blockchain.Block, error) {
+	return m.MineWithContext(context.Background(), chain, bits)
+}
+
+func (m *Node) MineWithContext(ctx context.Context, chain blockchain.Chain, bits int) (blockchain.Block, error) {
 	tip := chain.Blocks[chain.Tip]
-	return consensus.Mine(tip, chain, m.Addr, bits)
+	return consensus.MineWithContext(ctx, tip, chain, m.Addr, bits)
 }
 
 // HasSatoshi verifica si este minero es el propietario de un SatoshiID específico

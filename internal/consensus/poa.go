@@ -7,6 +7,7 @@
 package consensus
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -26,6 +27,15 @@ var (
 )
 
 func Mine(tip blockchain.Block, chain blockchain.Chain, miner blockchain.Address, bits int) (blockchain.Block, error) {
+	return MineWithContext(context.Background(), tip, chain, miner, bits)
+}
+
+// MineWithContext busca el nonce igual que Mine y abandona la búsqueda si ctx se cancela.
+// La regla de dificultad, el sorteo y las firmas no cambian.
+func MineWithContext(ctx context.Context, tip blockchain.Block, chain blockchain.Chain, miner blockchain.Address, bits int) (blockchain.Block, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	prevHash := tip.Header.Hash()
 
 	h := blockchain.Header{
@@ -36,8 +46,10 @@ func Mine(tip blockchain.Block, chain blockchain.Chain, miner blockchain.Address
 		Supply: tip.Header.Supply,
 	}
 
-	// 2. Bucle de búsqueda (Proof of Work)
 	for {
+		if err := ctx.Err(); err != nil {
+			return blockchain.Block{}, err
+		}
 		currentHash := h.Hash()
 		if cumpleDificultad(currentHash, bits) {
 			// ¡PoW encontrado! Ahora ejecutamos el sorteo usando el padre (tip.Header)

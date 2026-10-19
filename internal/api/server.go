@@ -2,17 +2,21 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"poa-demo/internal/blockchain"
 	"poa-demo/internal/config"
+	"poa-demo/internal/engine"
 )
 
-// ChainSource es la vista de solo lectura que el servidor expone por HTTP.
+// ChainSource es el coordinador que el servidor expone por HTTP.
 type ChainSource interface {
-	Snapshot() (blocks []blockchain.Block, supply uint32, difficulty int)
+	View() engine.View
+	Pause() engine.View
+	Start() (engine.View, error)
+	Reset() engine.View
 }
 
 // Server publica la cadena y el stream de bloques verificados.
@@ -49,15 +53,64 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/chain", s.handleChain)
 	mux.HandleFunc("GET /api/v1/stream", s.handleStream)
+	mux.HandleFunc("POST /api/v1/control/pause", s.handlePause)
+	mux.HandleFunc("POST /api/v1/control/start", s.handleStart)
+	mux.HandleFunc("POST /api/v1/control/reset", s.handleReset)
 	return s.withCORS(mux)
 }
 
 func (s *Server) handleChain(w http.ResponseWriter, _ *http.Request) {
-	view := NewChainView(s.chain.Snapshot())
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(view); err != nil {
-		http.Error(w, "no se pudo serializar la cadena", http.StatusInternalServerError)
+	s.writeView(w, http.StatusOK, s.chain.View())
+}
+
+func (s *Server) handlePause(w http.ResponseWriter, _ *http.Request) {
+	view := s.chain.Pause()
+	s.publishStatus(view)
+	s.writeView(w, http.StatusOK, view)
+}
+
+func (s *Server) handleStart(w http.ResponseWriter, _ *http.Request) {
+	view, err := s.chain.Start()
+	if errors.Is(err, engine.ErrBlockLimit) {
+		s.writeJSON(w, http.StatusConflict, LimitError{
+			Error:      "block_limit_reached",
+			MaxBlocks:  view.MaxBlocks,
+			BlockCount: view.BlockCount,
+		})
+		return
 	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.publishStatus(view)
+	s.writeView(w, http.StatusOK, view)
+}
+
+func (s *Server) handleReset(w http.ResponseWriter, _ *http.Request) {
+	view := s.chain.Reset()
+	s.publishStatus(view)
+	s.writeView(w, http.StatusOK, view)
+}
+
+func (s *Server) writeView(w http.ResponseWriter, status int, view engine.View) {
+	s.writeJSON(w, status, ChainFromView(view))
+}
+
+func (s *Server) writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		return
+	}
+}
+
+func (s *Server) publishStatus(view engine.View) {
+	payload, err := json.Marshal(StatusFromView(view))
+	if err != nil {
+		return
+	}
+	s.hub.PublishEvent("status", payload)
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
@@ -92,11 +145,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			flusher.Flush()
-		case payload, open := <-events:
+		case message, open := <-events:
 			if !open {
 				return
 			}
-			if _, err := fmt.Fprintf(w, "event: block\ndata: %s\n\n", payload); err != nil {
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", message.event, message.data); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -109,7 +162,7 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		if origin, ok := s.allowedOrigin(r.Header.Get("Origin")); ok {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 		if r.Method == http.MethodOptions {

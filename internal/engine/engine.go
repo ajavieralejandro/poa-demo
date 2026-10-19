@@ -3,8 +3,11 @@
 package engine
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"poa-demo/internal/blockchain"
 	"poa-demo/internal/config"
@@ -12,21 +15,70 @@ import (
 	"poa-demo/internal/miners"
 )
 
+// ErrBlockLimit es el rechazo de Start cuando la generación ya tiene MAX_BLOCKS bloques.
+var ErrBlockLimit = errors.New("block_limit_reached")
+
+const (
+	StatusPaused   = "paused"
+	StatusRunning  = "running"
+	StopBlockLimit = "block_limit"
+)
+
 // validatorNodes es el reparto fijo de la demo: el suministro tiene que alcanzar
 // para dar al menos un satoshi a cada nodo y evitar el desbordamiento del pool.
 const validatorNodes = 100
 
-// Engine guarda la cadena confirmada y el pool de nodos.
-// MineNext es el único escritor. Snapshot se puede leer en paralelo.
+// Engine guarda la cadena confirmada y el único coordinador de la demo.
+// MineNext sigue disponible para la prueba de estrés. El servidor usa Run.
 type Engine struct {
 	mu         sync.RWMutex
+	controlMu  sync.Mutex
+	cond       *sync.Cond
 	chain      blockchain.Chain
 	nodes      map[blockchain.Address]*miners.Node
 	addresses  []blockchain.Address
 	cursor     int
 	difficulty int
 	supply     uint32
+	maxBlocks  int
+	interval   time.Duration
+
+	generation  uint64
+	roundID     uint64
+	running     bool
+	stopReason  string
+	busy        bool
+	workerOn    bool
+	roundCancel context.CancelFunc
 }
+
+// View es la foto que comparten HTTP y el stream.
+type View struct {
+	Blocks       []blockchain.Block
+	Supply       uint32
+	Difficulty   int
+	Interval     time.Duration
+	Status       string
+	Generation   uint64
+	Height       uint64
+	MaxBlocks    int
+	BlockCount   int
+	LimitReached bool
+	StopReason   string
+}
+
+// Notice avisa un bloque confirmado o un cambio de estado.
+type Notice struct {
+	Kind       string
+	Block      blockchain.Block
+	Generation uint64
+	State      View
+}
+
+const (
+	NoticeBlock  = "block"
+	NoticeStatus = "status"
+)
 
 // New arma la génesis y el pool determinista a partir de la configuración.
 func New(cfg config.Config) (*Engine, error) {
@@ -48,13 +100,24 @@ func New(cfg config.Config) (*Engine, error) {
 	}
 	chain, nodes := miners.NewDeterministicPool(chain, addresses)
 
-	return &Engine{
+	maxBlocks := cfg.MaxBlocks
+	if maxBlocks < 3 {
+		maxBlocks = 1000
+	}
+
+	eng := &Engine{
 		chain:      chain,
 		nodes:      nodes,
 		addresses:  addresses,
 		difficulty: cfg.Difficulty,
 		supply:     cfg.InitialSupply,
-	}, nil
+		maxBlocks:  maxBlocks,
+		interval:   cfg.BlockInterval,
+		generation: 1,
+		running:    true,
+	}
+	eng.cond = sync.NewCond(&eng.mu)
+	return eng, nil
 }
 
 // Snapshot devuelve los bloques desde la génesis hasta el tip, más los parámetros públicos.
@@ -92,7 +155,14 @@ func (e *Engine) MineNext() (blockchain.Block, error) {
 }
 
 func mineAndSeal(node *miners.Node, chain blockchain.Chain, nodes map[blockchain.Address]*miners.Node, bits int) (blockchain.Block, error) {
-	nextBlock, err := node.Mine(chain, bits)
+	return mineAndSealCtx(context.Background(), node, chain, nodes, bits)
+}
+
+func mineAndSealCtx(ctx context.Context, node *miners.Node, chain blockchain.Chain, nodes map[blockchain.Address]*miners.Node, bits int) (blockchain.Block, error) {
+	if err := ctx.Err(); err != nil {
+		return blockchain.Block{}, err
+	}
+	nextBlock, err := node.MineWithContext(ctx, chain, bits)
 	if err != nil {
 		return blockchain.Block{}, fmt.Errorf("minar: %w", err)
 	}

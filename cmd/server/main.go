@@ -38,11 +38,33 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go runMiner(ctx, eng, hub, cfg.BlockInterval)
+	go eng.Run(ctx, func(notice engine.Notice) {
+		switch notice.Kind {
+		case engine.NoticeBlock:
+			payload, err := json.Marshal(api.BlockEvent{
+				BlockView:  api.NewBlockView(notice.Block),
+				Generation: notice.Generation,
+			})
+			if err != nil {
+				log.Printf("serializar bloque %d: %v", notice.Block.Header.Height, err)
+				return
+			}
+			hub.PublishEvent("block", payload)
+			log.Printf("bloque %d verificado y emitido", notice.Block.Header.Height)
+		case engine.NoticeStatus:
+			payload, err := json.Marshal(api.StatusFromView(notice.State))
+			if err != nil {
+				log.Printf("serializar estado: %v", err)
+				return
+			}
+			hub.PublishEvent("status", payload)
+			log.Printf("límite de la demo: generación %d, %d bloques", notice.State.Generation, notice.State.BlockCount)
+		}
+	})
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("API en http://localhost%s (dificultad %d, supply %d, intervalo %s)", cfg.ListenAddr(), cfg.Difficulty, cfg.InitialSupply, cfg.BlockInterval)
+		log.Printf("API en http://localhost%s (dificultad %d, supply %d, máximo %d bloques, intervalo %s)", cfg.ListenAddr(), cfg.Difficulty, cfg.InitialSupply, cfg.MaxBlocks, cfg.BlockInterval)
 		log.Printf("stream SSE en http://localhost%s/api/v1/stream", cfg.ListenAddr())
 		errCh <- httpServer.ListenAndServe()
 	}()
@@ -58,50 +80,5 @@ func main() {
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
-	}
-}
-
-// runMiner repite la ronda de la demo y, tras cada verificación exitosa,
-// emite el bloque a todos los clientes conectados al stream.
-func runMiner(ctx context.Context, eng *engine.Engine, hub *api.Hub, interval time.Duration) {
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-
-		block, err := eng.MineNext()
-		if err != nil {
-			log.Printf("minado: %v", err)
-			if !wait(ctx, time.Second) {
-				return
-			}
-			continue
-		}
-
-		payload, err := json.Marshal(api.NewBlockView(block))
-		if err != nil {
-			log.Printf("serializar bloque %d: %v", block.Header.Height, err)
-			continue
-		}
-		hub.Publish(payload)
-		log.Printf("bloque %d verificado y emitido", block.Header.Height)
-
-		if !wait(ctx, interval) {
-			return
-		}
-	}
-}
-
-func wait(ctx context.Context, delay time.Duration) bool {
-	if delay <= 0 {
-		return ctx.Err() == nil
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
 	}
 }

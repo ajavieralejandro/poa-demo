@@ -14,6 +14,7 @@ const (
 	defaultPort            = "8080"
 	defaultDifficulty      = 16
 	defaultInitialSupply   = 1000
+	defaultMaxBlocks       = 1000
 	defaultBlockIntervalMS = 2000
 	defaultOrigins         = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
 )
@@ -23,6 +24,7 @@ type Config struct {
 	Port           string
 	Difficulty     int
 	InitialSupply  uint32
+	MaxBlocks      int
 	AllowedOrigins []string
 	BlockInterval  time.Duration
 }
@@ -83,6 +85,14 @@ func load(getenv func(string) string, path string) (Config, error) {
 		return Config{}, fmt.Errorf("config: INITIAL_SUPPLY debe ser mayor que cero")
 	}
 
+	maxBlocks, err := parseInt(lookup("MAX_BLOCKS"), defaultMaxBlocks, "MAX_BLOCKS")
+	if err != nil {
+		return Config{}, err
+	}
+	if maxBlocks < 3 {
+		return Config{}, fmt.Errorf("config: MAX_BLOCKS debe ser al menos 3")
+	}
+
 	intervalMS, err := parseInt(lookup("BLOCK_INTERVAL_MS"), defaultBlockIntervalMS, "BLOCK_INTERVAL_MS")
 	if err != nil {
 		return Config{}, err
@@ -100,6 +110,7 @@ func load(getenv func(string) string, path string) (Config, error) {
 		Port:           port,
 		Difficulty:     difficulty,
 		InitialSupply:  supply,
+		MaxBlocks:      maxBlocks,
 		AllowedOrigins: splitList(originsRaw),
 		BlockInterval:  time.Duration(intervalMS) * time.Millisecond,
 	}, nil
