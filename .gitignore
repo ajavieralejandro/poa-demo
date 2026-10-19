@@ -14,3 +14,6 @@
 # Workspace local de Go
 go.work
 go.work.sum
+
+# Configuración local
+.env
